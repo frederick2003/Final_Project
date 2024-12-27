@@ -3,7 +3,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/type_ptr.hpp>
+#include <unordered_map>
+#include <unordered_set>
 #include <glm/gtx/string_cast.hpp>
 
 #include <render/shader.h>
@@ -55,8 +56,8 @@ unsigned int quadVAO = 0;
 unsigned int quadVBO;
 
 // OpenGL camera view parameters
-static glm::vec3 eye_center(56.8179,509.257,372.0650);
-static glm::vec3 lookat(77,150,-85);
+static glm::vec3 eye_center(623.182,530.257,372.065);
+static glm::vec3 lookat(0,0,0);
 static glm::vec3 up(0, 1, 0);
 
 // View control
@@ -66,7 +67,7 @@ static float viewDistance = 300.0f;
 
 static float FoV = 33.0f;
 static float zNear = 1.0f;
-static float zFar = 1000.0f;
+static float zFar = 1500.0f;
 
 // Lighting control
 const glm::vec3 wave500(0.0f, 255.0f, 146.0f);
@@ -87,13 +88,832 @@ static float depthFoV = 25.0f;
 static float depthNear = 300.0f;
 static float depthFar = 3000.0f;
 
-//Animation
 // Animation
 static bool playAnimation = true;
 static float playbackSpeed = 2.0f;
 
 // Helper flag and function to save depth maps for debugging
 static bool saveDepth = true;
+
+struct metro_stop {
+	glm::vec3 position;		// Position of the box
+	glm::vec3 scale;		// Size of the box in each axis
+	float rotationAngle = glm::radians(180.0f);        // Rotation angle in degrees (converted to radians)
+	glm::vec3 rotationAxis = glm::vec3(0.0f, 1.0f, 0.0f); // Rotation around Y-axis
+
+	GLfloat vertex_buffer_data[120] {
+		// Back face
+		1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, 1.0f, -1.0f,
+		1.0f, 1.0f, -1.0f,
+
+		// Left face
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f, 1.0f,
+		-1.0f, 1.0f, 1.0f,
+		-1.0f, 1.0f, -1.0f,
+
+		// Right face
+		1.0f, -1.0f, 1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, 1.0f, -1.0f,
+		1.0f, 1.0f, 1.0f,
+
+		// Top face
+		-1.0f, 1.0f, 1.0f,
+		1.0f, 1.0f, 1.0f,
+		1.0f, 1.0f, -1.0f,
+		-1.0f, 1.0f, -1.0f,
+
+		// Bottom face
+		-1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, 1.0f,
+		-1.0f, -1.0f, 1.0f,
+
+		// Back face (interior)
+	0.99f, -0.99f, -0.99f,
+   -0.99f, -0.99f, -0.99f,
+   -0.99f,  0.99f, -0.99f,
+	0.99f,  0.99f, -0.99f,
+
+	// Left face (interior)
+   -0.99f, -0.99f, -0.99f,
+   -0.99f, -0.99f,  0.99f,
+   -0.99f,  0.99f,  0.99f,
+   -0.99f,  0.99f, -0.99f,
+
+	// Right face (interior)
+	0.99f, -0.99f,  0.99f,
+	0.99f, -0.99f, -0.99f,
+	0.99f,  0.99f, -0.99f,
+	0.99f,  0.99f,  0.99f,
+
+	// Top face (interior)
+   -0.99f,  0.99f,  0.99f,
+	0.99f,  0.99f,  0.99f,
+	0.99f,  0.99f, -0.99f,
+   -0.99f,  0.99f, -0.99f,
+
+	// Bottom face (interior)
+   -0.99f, -0.99f, -0.99f,
+	0.99f, -0.99f, -0.99f,
+	0.99f, -0.99f,  0.99f,
+   -0.99f, -0.99f,  0.99f,
+	};
+
+	GLfloat normal_buffer_data[120] {
+		// Back face
+		0.0f, 0.0f, -1.0f, // Normal pointing out along the -Z axis
+	   0.0f, 0.0f, -1.0f,
+	   0.0f, 0.0f, -1.0f,
+	   0.0f, 0.0f, -1.0f,
+
+	   // Left face
+	   -1.0f, 0.0f, 0.0f, // Normal pointing out along the -X axis
+	   -1.0f, 0.0f, 0.0f,
+	   -1.0f, 0.0f, 0.0f,
+	   -1.0f, 0.0f, 0.0f,
+
+	   // Right face
+	   1.0f, 0.0f, 0.0f,  // Normal pointing out along the +X axis
+	   1.0f, 0.0f, 0.0f,
+	   1.0f, 0.0f, 0.0f,
+	   1.0f, 0.0f, 0.0f,
+
+	   // Top face
+	   0.0f, 1.0f, 0.0f,  // Normal pointing out along the +Y axis
+	   0.0f, 1.0f, 0.0f,
+	   0.0f, 1.0f, 0.0f,
+	   0.0f, 1.0f, 0.0f,
+
+	   // Bottom face
+	  0.0f, -1.0f, 0.0f, // Normal pointing out along the -Y axis
+	  0.0f, -1.0f, 0.0f,
+	  0.0f, -1.0f, 0.0f,
+	  0.0f, -1.0f, 0.0f,
+
+		// Back face (interior)
+		0.0f,  0.0f,  1.0f,
+		0.0f,  0.0f,  1.0f,
+		0.0f,  0.0f,  1.0f,
+		0.0f,  0.0f,  1.0f,
+
+		// Left face (interior)
+		1.0f,  0.0f,  0.0f,
+		1.0f,  0.0f,  0.0f,
+		1.0f,  0.0f,  0.0f,
+		1.0f,  0.0f,  0.0f,
+
+		// Right face (interior)
+	   -1.0f,  0.0f,  0.0f,
+	   -1.0f,  0.0f,  0.0f,
+	   -1.0f,  0.0f,  0.0f,
+	   -1.0f,  0.0f,  0.0f,
+
+		// Top face (interior)
+		0.0f, -1.0f,  0.0f,
+		0.0f, -1.0f,  0.0f,
+		0.0f, -1.0f,  0.0f,
+		0.0f, -1.0f,  0.0f,
+
+		// Bottom face (interior)
+		0.0f,  1.0f,  0.0f,
+		0.0f,  1.0f,  0.0f,
+		0.0f,  1.0f,  0.0f,
+		0.0f,  1.0f,  0.0f,
+   };
+
+	GLuint index_buffer_data[60] = {
+		0, 1, 2,
+		0, 2, 3,
+
+		4, 5, 6,
+		4, 6, 7,
+
+		8, 9, 10,
+		8, 10, 11,
+
+		12, 13, 14,
+		12, 14, 15,
+
+		16, 17, 18,
+		16, 18, 19,
+
+		// Back face (interior)
+		20, 21, 22,
+		20, 22, 23,
+
+		// Left face (interior)
+		24, 25, 26,
+		24, 26, 27,
+
+		// Right face (interior)
+		28, 29, 30,
+		28, 30, 31,
+
+		// Top face (interior)
+		32, 33, 34,
+		32, 34, 35,
+
+		// Bottom face (interior)
+		36, 37, 38,
+		36, 38, 39,
+	};
+
+	GLfloat uv_buffer_data[80] = {
+		// Front
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		// Back
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		// Left
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 0.0f,
+		0.0f, 0.0f,
+		0.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+	};
+
+	glm::mat4 modelMatrix;
+
+	// OpenGL buffers
+	GLuint vertexArrayID;
+	GLuint vertexBufferID;
+	GLuint indexBufferID;
+	GLuint colorBufferID;
+	GLuint normalBufferID;
+	GLuint uvBufferID;
+	GLuint textureID, textureID2;
+
+
+	// Shader variable IDs
+	GLuint mvpMatrixID;
+	GLuint textureSamplerID;
+	GLuint lightPositionID;
+	GLuint lightIntensityID;
+	GLuint lightSpaceMatrixID;
+	GLuint normalMatrixID;
+	GLuint modelMatrixID;
+	GLuint modelMatrixDepthID;
+	GLuint LSM_ID;
+	GLuint shadowMapTextureID;
+
+	GLuint programID;
+	GLuint programID2;
+	GLuint depthShaderID;
+
+	void initialize(glm::vec3 position, glm::vec3 scale) {
+		// Define scale of the building geometry
+		this->position = position;
+		this->scale = scale;
+		std::string textureLocation = "../Final_Project/Textures/Metro_Sides.jpg";
+		std::string textureLocation2 = "../Final_Project/Textures/roof_tex.jpg";
+
+
+		modelMatrix = glm::mat4(1.0f);
+		// Translate the cliff to its position
+		modelMatrix = glm::translate(modelMatrix, position);
+		// Rotate
+		modelMatrix = glm::rotate(modelMatrix, rotationAngle, rotationAxis);
+		// Scale the cliff along each axis
+		modelMatrix = glm::scale(modelMatrix, scale);
+
+		// Create a vertex array object
+		glGenVertexArrays(1, &vertexArrayID);
+		glBindVertexArray(vertexArrayID);
+
+		// Create a vertex buffer object to store the vertex data
+		glGenBuffers(1, &vertexBufferID);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer_data), vertex_buffer_data, GL_STATIC_DRAW);
+
+		// Create a vertex buffer object to store the UV data
+		//for (int i = 0; i < 24; ++i) uv_buffer_data[2*i+1] *= 5;
+		glGenBuffers(1, &uvBufferID);
+		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(uv_buffer_data), uv_buffer_data,GL_STATIC_DRAW);
+
+		// Create a vertex buffer storing Normal buffer data
+		glGenBuffers(1, &normalBufferID);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(normal_buffer_data), normal_buffer_data, GL_STATIC_DRAW);
+
+		// Create an index buffer object to store the index data that defines triangle faces
+		glGenBuffers(1, &indexBufferID);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(index_buffer_data), index_buffer_data, GL_STATIC_DRAW);
+
+		// Create and compile our GLSL program from the shaders
+		programID = LoadShadersFromString(textureVertexShader,textureFragmentShader );
+		if (programID == 0)
+		{
+			std::cerr << "Failed to load shaders." << std::endl;
+		}
+
+		programID2 = LoadShadersFromString(lightingVertexShader,lightingFragmentShader );
+		if (programID2 == 0)
+		{
+			std::cerr << "lighting shaders failed to load shaders." << std::endl;
+		}
+
+		depthShaderID = LoadShadersFromString(depthVertexShader,depthFragmentShader );
+		if (depthShaderID == 0)
+		{
+			std::cerr << "Depth shaders ailed to load shaders." << std::endl;
+		}
+
+		//Light rendering shader uniforms
+		mvpMatrixID = glGetUniformLocation(programID2, "MVP");
+		lightPositionID = glGetUniformLocation(programID2, "lightPosition");
+		lightIntensityID = glGetUniformLocation(programID2, "lightIntensity");
+		modelMatrixID = glGetUniformLocation(programID2, "modelMatrix");
+		normalMatrixID = glGetUniformLocation(programID2, "normalMatrix");
+		LSM_ID = glGetUniformLocation(programID2, "lightSpaceMatrix");
+		shadowMapTextureID = glGetUniformLocation(programID2, "shadowMap");
+
+
+
+
+
+		//Depth rendering shader uniforms
+		modelMatrixDepthID = glGetUniformLocation(depthShaderID, "model");
+		lightSpaceMatrixID = glGetUniformLocation(depthShaderID, "lightSpaceMatrix");
+
+		textureID = LoadTextureTileBox(textureLocation.c_str());
+		textureID2 = LoadTextureTileBox(textureLocation2.c_str());
+
+		// Get a handle for our "textureSampler" uniform
+		//textureSamplerID = glGetUniformLocation(programID,"textureSampler");
+		textureSamplerID = glGetUniformLocation(programID2,"textureSampler");
+	}
+
+	void renderWithLight(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix) {
+		glUseProgram(programID2);
+
+		glBindVertexArray(vertexArrayID);
+
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(1);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(2);
+		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		glm::mat4 mvp = cameraMatrix * modelMatrix;
+		glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
+		glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, &modelMatrix[0][0]);
+
+		glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+		glUniformMatrix3fv(normalMatrixID, 1, GL_FALSE, &normalMatrix[0][0]);
+		glUniformMatrix4fv(LSM_ID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+
+		// Set light data
+		glUniform3fv(lightPositionID, 1, &lightPosition[0]);
+		glUniform3fv(lightIntensityID, 1, &lightIntensity[0]);
+
+		glUniform1i(shadowMapTextureID, 1);
+
+		glEnable(GL_DEPTH_TEST);
+		glDisable(GL_CULL_FACE);
+
+
+		//Set textureSampler to use texture unit 0
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glUniform1i(textureSamplerID, 0);
+
+		// Draw the box
+		glDrawElements(
+			GL_TRIANGLES,      // mode
+			18,    			   // number of indices
+			GL_UNSIGNED_INT,   // type
+			(void*)0           // element array buffer offset
+		);
+
+		glBindTexture(GL_TEXTURE_2D, textureID2);
+		glUniform1i(textureSamplerID, 0);
+
+		// Draw the box
+		glDrawElements(
+			GL_TRIANGLES,      // mode
+			12,    			   // number of indices
+			GL_UNSIGNED_INT,   // type
+			(void*)(18 * sizeof(GLuint))           // element array buffer offset
+		);
+
+
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glUniform1i(textureSamplerID, 0);
+		// Draw the box
+		glDrawElements(
+			GL_TRIANGLES,      // mode
+			30,    			   // number of indices
+			GL_UNSIGNED_INT,   // type
+			(void*)(30 * sizeof(GLuint))           // element array buffer offset
+		);
+
+		glEnable(GL_CULL_FACE);
+
+
+		glDisableVertexAttribArray(0);
+		glDisableVertexAttribArray(1);
+		glDisableVertexAttribArray(2);
+	}
+
+	void renderShadow(glm::mat4 lightSpaceMatrix) {
+		glUseProgram(depthShaderID);
+
+		glBindVertexArray(vertexArrayID);
+
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(1);
+		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(2);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		glUniformMatrix4fv(modelMatrixDepthID, 1, GL_FALSE, &modelMatrix[0][0]);
+		glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		// Draw the box
+		glDrawElements(
+			GL_TRIANGLES,      // mode
+			30,    			   // number of indices
+			GL_UNSIGNED_INT,   // type
+			(void*)0           // element array buffer offset
+		);
+
+		glDisableVertexAttribArray(0);
+		glDisableVertexAttribArray(1);
+		glDisableVertexAttribArray(2);
+	}
+
+	void cleanup() {
+		glDeleteBuffers(1, &vertexBufferID);
+		glDeleteBuffers(1, &colorBufferID);
+		glDeleteBuffers(1, &indexBufferID);
+		glDeleteVertexArrays(1, &vertexArrayID);
+		glDeleteBuffers(1, &uvBufferID);
+		glDeleteTextures(1, &textureID);
+		glDeleteProgram(programID);
+	}
+};
+
+struct sports_center {
+
+	glm::vec3 position;		// Position of the box
+	glm::vec3 scale;		// Size of the box in each axis
+
+	GLfloat vertex_buffer_data[72] = {	// Vertex definition for a canonical box
+		// Front face
+		-1.0f, -1.0f, 1.0f,
+		1.0f, -1.0f, 1.0f,
+		1.0f, 1.0f, 1.0f,
+		-1.0f, 1.0f, 1.0f,
+
+		// Back face
+		1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, 1.0f, -1.0f,
+		1.0f, 1.0f, -1.0f,
+
+		// Left face
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f, 1.0f,
+		-1.0f, 1.0f, 1.0f,
+		-1.0f, 1.0f, -1.0f,
+
+		// Right face
+		1.0f, -1.0f, 1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, 1.0f, -1.0f,
+		1.0f, 1.0f, 1.0f,
+
+		// Top face
+		-1.0f, 1.0f, 1.0f,
+		1.0f, 1.0f, 1.0f,
+		1.0f, 1.0f, -1.0f,
+		-1.0f, 1.0f, -1.0f,
+
+		// Bottom face
+		-1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, 1.0f,
+		-1.0f, -1.0f, 1.0f,
+	};
+
+
+	GLfloat normal_buffer_data[72] = {
+		// Front face
+		0.0f, 0.0f, 1.0f,  // Normal pointing out along the +Z axis
+		0.0f, 0.0f, 1.0f,
+		0.0f, 0.0f, 1.0f,
+		0.0f, 0.0f, 1.0f,
+
+		// Back face
+		0.0f, 0.0f, -1.0f, // Normal pointing out along the -Z axis
+		0.0f, 0.0f, -1.0f,
+		0.0f, 0.0f, -1.0f,
+		0.0f, 0.0f, -1.0f,
+
+		// Left face
+		-1.0f, 0.0f, 0.0f, // Normal pointing out along the -X axis
+		-1.0f, 0.0f, 0.0f,
+		-1.0f, 0.0f, 0.0f,
+		-1.0f, 0.0f, 0.0f,
+
+		// Right face
+		1.0f, 0.0f, 0.0f,  // Normal pointing out along the +X axis
+		1.0f, 0.0f, 0.0f,
+		1.0f, 0.0f, 0.0f,
+		1.0f, 0.0f, 0.0f,
+
+		// Top face
+		0.0f, 1.0f, 0.0f,  // Normal pointing out along the +Y axis
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+
+		// Bottom face
+		0.0f, -1.0f, 0.0f, // Normal pointing out along the -Y axis
+		0.0f, -1.0f, 0.0f,
+		0.0f, -1.0f, 0.0f,
+		0.0f, -1.0f, 0.0f,
+
+	};
+
+
+	GLuint index_buffer_data[36] = {		// 12 triangle faces of a box
+		0, 1, 2,
+		0, 2, 3,
+
+		4, 5, 6,
+		4, 6, 7,
+
+		8, 9, 10,
+		8, 10, 11,
+
+		12, 13, 14,
+		12, 14, 15,
+
+		16, 17, 18,
+		16, 18, 19,
+
+		20, 21, 22,
+		20, 22, 23,
+	};
+
+	GLfloat uv_buffer_data[48] = {
+		// Front
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		// Back
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		// Left
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		// Right
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		// Top - we do not want texture the top
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		// Bottom - we do not want texture the bottom
+		0.0f, 0.0f,
+		0.0f, 0.0f,
+		0.0f, 0.0f,
+		0.0f, 0.0f,
+	};
+
+
+	glm::mat4 modelMatrix;
+
+	// OpenGL buffers
+	GLuint vertexArrayID;
+	GLuint vertexBufferID;
+	GLuint indexBufferID;
+	GLuint colorBufferID;
+	GLuint normalBufferID;
+	GLuint uvBufferID;
+	GLuint textureID, textureID2;
+
+
+	// Shader variable IDs
+	GLuint mvpMatrixID;
+	GLuint textureSamplerID;
+	GLuint lightPositionID;
+	GLuint lightIntensityID;
+	GLuint lightSpaceMatrixID;
+	GLuint normalMatrixID;
+	GLuint modelMatrixID;
+	GLuint modelMatrixDepthID;
+	GLuint LSM_ID;
+	GLuint shadowMapTextureID;
+
+	GLuint programID;
+	GLuint programID2;
+	GLuint depthShaderID;
+
+	void initialize(glm::vec3 position, glm::vec3 scale) {
+		// Define scale of the building geometry
+		this->position = position;
+		this->scale = scale;
+		std::string textureLocation = "../Final_Project/Textures/brick_wall_text.jpg";
+		std::string textureLocation2 = "../Final_Project/Textures/basketball_court.jpg";
+
+
+		modelMatrix = glm::mat4(1.0f);
+		// Translate the cliff to its position
+		modelMatrix = glm::translate(modelMatrix, position);
+		// Scale the cliff along each axis
+		modelMatrix = glm::scale(modelMatrix, scale);
+
+		// Create a vertex array object
+		glGenVertexArrays(1, &vertexArrayID);
+		glBindVertexArray(vertexArrayID);
+
+		// Create a vertex buffer object to store the vertex data
+		glGenBuffers(1, &vertexBufferID);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer_data), vertex_buffer_data, GL_STATIC_DRAW);
+
+		// Create a vertex buffer object to store the UV data
+		//for (int i = 0; i < 24; ++i) uv_buffer_data[2*i+1] *= 5;
+		glGenBuffers(1, &uvBufferID);
+		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(uv_buffer_data), uv_buffer_data,GL_STATIC_DRAW);
+
+		// Create a vertex buffer storing Normal buffer data
+		glGenBuffers(1, &normalBufferID);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(normal_buffer_data), normal_buffer_data, GL_STATIC_DRAW);
+
+
+		// Create an index buffer object to store the index data that defines triangle faces
+		glGenBuffers(1, &indexBufferID);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(index_buffer_data), index_buffer_data, GL_STATIC_DRAW);
+
+		// Create and compile our GLSL program from the shaders
+		programID = LoadShadersFromString(textureVertexShader,textureFragmentShader );
+		if (programID == 0)
+		{
+			std::cerr << "Failed to load shaders." << std::endl;
+		}
+
+		programID2 = LoadShadersFromString(lightingVertexShader,lightingFragmentShader );
+		if (programID2 == 0)
+		{
+			std::cerr << "lighting shaders failed to load shaders." << std::endl;
+		}
+
+		depthShaderID = LoadShadersFromString(depthVertexShader,depthFragmentShader );
+		if (depthShaderID == 0)
+		{
+			std::cerr << "Depth shaders ailed to load shaders." << std::endl;
+		}
+
+		//Light rendering shader uniforms
+		mvpMatrixID = glGetUniformLocation(programID2, "MVP");
+		lightPositionID = glGetUniformLocation(programID2, "lightPosition");
+		lightIntensityID = glGetUniformLocation(programID2, "lightIntensity");
+		modelMatrixID = glGetUniformLocation(programID2, "modelMatrix");
+		normalMatrixID = glGetUniformLocation(programID2, "normalMatrix");
+		LSM_ID = glGetUniformLocation(programID2, "lightSpaceMatrix");
+		shadowMapTextureID = glGetUniformLocation(programID2, "shadowMap");
+
+
+
+
+
+		//Depth rendering shader uniforms
+		modelMatrixDepthID = glGetUniformLocation(depthShaderID, "model");
+		lightSpaceMatrixID = glGetUniformLocation(depthShaderID, "lightSpaceMatrix");
+
+		textureID = LoadTextureTileBox(textureLocation.c_str());
+		textureID2 = LoadTextureTileBox(textureLocation2.c_str());
+
+		// Get a handle for our "textureSampler" uniform
+		//textureSamplerID = glGetUniformLocation(programID,"textureSampler");
+		textureSamplerID = glGetUniformLocation(programID2,"textureSampler");
+	}
+
+	void renderWithLight(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix) {
+		glUseProgram(programID2);
+
+		glBindVertexArray(vertexArrayID);
+
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(1);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(2);
+		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		glm::mat4 mvp = cameraMatrix * modelMatrix;
+		glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
+		glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, &modelMatrix[0][0]);
+
+		glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+		glUniformMatrix3fv(normalMatrixID, 1, GL_FALSE, &normalMatrix[0][0]);
+		glUniformMatrix4fv(LSM_ID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+
+		// Set light data
+		glUniform3fv(lightPositionID, 1, &lightPosition[0]);
+		glUniform3fv(lightIntensityID, 1, &lightIntensity[0]);
+
+		glUniform1i(shadowMapTextureID, 1);
+
+
+		//Set textureSampler to use texture unit 0
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glUniform1i(textureSamplerID, 0);
+
+		// Draw the box
+		glDrawElements(
+			GL_TRIANGLES,      // mode
+			24,    			   // number of indices
+			GL_UNSIGNED_INT,   // type
+			(void*)0           // element array buffer offset
+		);
+
+		glBindTexture(GL_TEXTURE_2D, textureID2);
+		glUniform1i(textureSamplerID, 0);
+
+		// Draw the box
+		glDrawElements(
+			GL_TRIANGLES,      // mode
+			12,    			   // number of indices
+			GL_UNSIGNED_INT,   // type
+			(void*)(24 * sizeof(GLuint))           // element array buffer offset
+		);
+
+		glDisableVertexAttribArray(0);
+		glDisableVertexAttribArray(1);
+		glDisableVertexAttribArray(2);
+	}
+
+	void renderShadow(glm::mat4 lightSpaceMatrix) {
+		glUseProgram(depthShaderID);
+
+		glBindVertexArray(vertexArrayID);
+
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(1);
+		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glEnableVertexAttribArray(2);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		glUniformMatrix4fv(modelMatrixDepthID, 1, GL_FALSE, &modelMatrix[0][0]);
+		glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		// Draw the box
+		glDrawElements(
+			GL_TRIANGLES,      // mode
+			36,    			   // number of indices
+			GL_UNSIGNED_INT,   // type
+			(void*)0           // element array buffer offset
+		);
+
+		glDisableVertexAttribArray(0);
+		glDisableVertexAttribArray(1);
+		glDisableVertexAttribArray(2);
+	}
+
+	void cleanup() {
+		glDeleteBuffers(1, &vertexBufferID);
+		glDeleteBuffers(1, &colorBufferID);
+		glDeleteBuffers(1, &indexBufferID);
+		glDeleteVertexArrays(1, &vertexArrayID);
+		glDeleteBuffers(1, &uvBufferID);
+		glDeleteTextures(1, &textureID);
+		glDeleteProgram(programID);
+	}
+};
 
 struct skybox {
  GLuint skyboxVAO, skyboxVBO;
@@ -225,11 +1045,604 @@ struct skybox {
 	}
 };
 
+struct world_attributes{
+
+	glm::vec3 position;		// Position of the box
+	glm::vec3 scale;		// Size of the box in each axis
+
+	GLfloat vertex_buffer_data[60] = {	// Vertex definition for a canonical box
+		// Coords for first Footpath
+		-0.7f, 0.152f, 0.8f, //0
+		-0.3f, 0.152f, 0.8f, //1
+		-0.3f, 0.152f, 0.7f, //2
+		-0.7f, 0.152f, 0.7f, //3
+		//coords for second footpath
+		-0.5f, 0.152f, 0.4f, //4
+		-0.3f, 0.152f, 0.4f, //5
+		-0.3f, 0.152f, 0.3f, //6
+		-0.5f, 0.152f, 0.3f, //7
+
+		-0.7f, 0.152f, -0.5f, //8
+		-0.3f, 0.152f, -0.5f, //9
+		-0.3f, 0.152f, -0.6f, //10
+		-0.7f, 0.152f, -0.6f, //11
+
+		-0.7f, 0.152f, -0.8f, //12
+		-0.3f, 0.152f, -0.8f, //13
+		-0.3f, 0.152f, -0.9f, //14
+		-0.7f, 0.152f, -0.9f, //15
+
+		// Connecting Footpath (new)
+		-0.3f, 0.152f, 1.0f,  //16 (end of Path 1)
+		0.0f, 0.152f, 1.0f,  //17 (end of Path 2)
+		0.0f, 0.152f, 0.0f,  //18 (aligning near Path 2)
+		-0.3f, 0.152f, 0.0f   //19 (aligning near Path 1)
+	};
+
+
+	GLfloat normal_buffer_data[60] = {
+		0.0f, 1.0f, 0.0f, // Normal pointing out along the -Y axis
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+
+		0.0f, 1.0f, 0.0f, // Normal pointing out along the -Y axis
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+
+		0.0f, 1.0f, 0.0f, // Normal pointing out along the -Y axis
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+
+		0.0f, 1.0f, 0.0f, // Normal pointing out along the -Y axis
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+
+		0.0f, 1.0f, 0.0f, // Normal pointing out along the -Y axis
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 0.0f,
+	};
+
+
+	GLuint index_buffer_data[30] = {
+		0, 1, 2,
+		0, 2, 3,
+
+		4, 5, 6,
+		4, 6, 7,
+
+		8, 9, 10,
+		8, 10, 11,
+
+		12, 13, 14,
+		12, 14, 15,
+
+		16, 17, 18,
+		16, 18, 19
+	};
+
+	GLfloat uv_buffer_data[40] = {
+		// Front
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f,
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+	};
+
+
+	glm::mat4 modelMatrix;
+
+	// OpenGL buffers
+	GLuint vertexArrayID;
+	GLuint vertexBufferID;
+	GLuint indexBufferID;
+	GLuint normalBufferID;
+	GLuint uvBufferID;
+	GLuint TextureID;
+
+
+	// Shader variable IDs
+	GLuint mvpMatrixID;
+	GLuint textureSamplerID;
+	GLuint lightPositionID;
+	GLuint lightIntensityID;
+	GLuint lightSpaceMatrixID;
+	GLuint normalMatrixID;
+	GLuint modelMatrixID;
+	GLuint modelMatrixDepthID;
+	GLuint LSM_ID;
+	GLuint shadowMapTextureID;
+
+	GLuint programID;
+	GLuint programID2;
+	GLuint depthShaderID;
+
+	    void initialize(glm::vec3 position, glm::vec3 scale) {
+        this->position = position;
+        this->scale = scale;
+
+        modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::translate(modelMatrix, position);
+        modelMatrix = glm::scale(modelMatrix, scale);
+
+        glGenVertexArrays(1, &vertexArrayID);
+        glBindVertexArray(vertexArrayID);
+
+        glGenBuffers(1, &vertexBufferID);
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer_data), vertex_buffer_data, GL_STATIC_DRAW);
+
+        glGenBuffers(1, &normalBufferID);
+        glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(normal_buffer_data), normal_buffer_data, GL_STATIC_DRAW);
+	    	for (int i = 0; i < 20; ++i) {
+	    		uv_buffer_data[2*i] *= 15;
+	    		uv_buffer_data[2*i+1] *= 5;
+	    	}
+
+        glGenBuffers(1, &uvBufferID);
+        glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(uv_buffer_data), uv_buffer_data, GL_STATIC_DRAW);
+
+        glGenBuffers(1, &indexBufferID);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(index_buffer_data), index_buffer_data, GL_STATIC_DRAW);
+
+        depthShaderID = LoadShadersFromString(depthVertexShader, depthFragmentShader);
+        programID = LoadShadersFromString(lightingVertexShader, lightingFragmentShader);
+        TextureID = LoadTextureTileBox("../Final_Project/Textures/footpath_text.jpg");
+
+        if (programID == 0 || depthShaderID == 0) {
+            std::cerr << "Failed to load shaders." << std::endl;
+        }
+        if (TextureID == 0) {
+            std::cerr << "Failed to load texture." << std::endl;
+        }
+
+        mvpMatrixID = glGetUniformLocation(programID, "MVP");
+        modelMatrixID = glGetUniformLocation(programID, "modelMatrix");
+        normalMatrixID = glGetUniformLocation(programID, "normalMatrix");
+    	LSM_ID = glGetUniformLocation(programID, "lightSpaceMatrix");
+
+        lightPositionID = glGetUniformLocation(programID, "lightPosition");
+        lightIntensityID = glGetUniformLocation(programID, "lightIntensity");
+        textureSamplerID = glGetUniformLocation(programID, "textureSampler");
+    	shadowMapTextureID = glGetUniformLocation(programID, "shadowMap");
+
+
+    	modelMatrixDepthID = glGetUniformLocation(depthShaderID, "model");
+    	lightSpaceMatrixID = glGetUniformLocation(depthShaderID, "lightSpaceMatrix");
+    }
+
+	void renderShadow(glm::mat4 lightSpaceMatrix) {
+	    	glUseProgram(depthShaderID);
+
+	    	glBindVertexArray(vertexArrayID);
+
+	    	glEnableVertexAttribArray(0);
+	    	glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+	    	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+	    	glEnableVertexAttribArray(1);
+	    	glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+	    	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+	    	glEnableVertexAttribArray(2);
+	    	glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+	    	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+	    	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+	    	glUniformMatrix4fv(modelMatrixDepthID, 1, GL_FALSE, &modelMatrix[0][0]);
+	    	glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+	    	// Draw the box
+	    	glDrawElements(
+				GL_TRIANGLES,      // mode
+				30,    			   // number of indices
+				GL_UNSIGNED_INT,   // type
+				(void*)0           // element array buffer offset
+			);
+
+	    	glDisableVertexAttribArray(0);
+	    	glDisableVertexAttribArray(1);
+	    	glDisableVertexAttribArray(2);
+	    }
+
+	void renderWithLight(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix, glm::vec3 lightIntensity, glm::vec3 lightPosition) {
+	    	glUseProgram(programID);
+	    	glBindVertexArray(vertexArrayID);
+
+	    	glEnableVertexAttribArray(0);
+	    	glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+	    	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+	    	glEnableVertexAttribArray(1);
+	    	glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+	    	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+	    	glEnableVertexAttribArray(2);
+	    	glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
+	    	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+	    	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+	    	glm::mat4 mvp = cameraMatrix * modelMatrix;
+	    	glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
+	    	glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, &modelMatrix[0][0]);
+
+	    	glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+	    	glUniformMatrix3fv(normalMatrixID, 1, GL_FALSE, &normalMatrix[0][0]);
+	    	glUniformMatrix4fv(LSM_ID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+
+
+	    	// Set light data
+	    	glUniform3fv(lightPositionID, 1, &lightPosition[0]);
+	    	glUniform3fv(lightIntensityID, 1, &lightIntensity[0]);
+	    	// Bind shadow map texture
+	    	glUniform1i(shadowMapTextureID, 1);
+
+
+	    	//Set textureSampler to use texture unit 0
+	    	glActiveTexture(GL_TEXTURE0);
+	    	glBindTexture(GL_TEXTURE_2D, TextureID);
+	    	glUniform1i(textureSamplerID, 0);
+
+	    	// Draw the first footpath
+	    	glDrawElements(
+				GL_TRIANGLES,      // mode
+				30,    			   // number of indices
+				GL_UNSIGNED_INT,   // type
+				(void*)0           // element array buffer offset
+			);
+
+
+
+	    	glDisableVertexAttribArray(0);
+	    	glDisableVertexAttribArray(1);
+	    	glDisableVertexAttribArray(2);
+	    }
+
+	void cleanup() {
+	    	glDeleteBuffers(1, &vertexBufferID);
+	    	glDeleteBuffers(1, &indexBufferID);
+	    	glDeleteVertexArrays(1, &vertexArrayID);
+	    	glDeleteBuffers(1, &uvBufferID);
+	    	glDeleteTextures(1, &TextureID);
+	    	glDeleteProgram(programID);
+	    }
+
+};
+
 struct world_setup {
 	glm::vec3 position;			// Position of the cliff face
 	glm::vec3 scale;			// Size of the face on each axis
 
-	GLfloat vertex_buffer_data[48] = {
+	float seaTime = 0.0f;
+	const float baseWaveHeight = 0.08f;
+	const float baseWaveFreq = 2.0f;
+	const int numWaves = 8;
+
+	static const int GRID_SIZE = 64; // Number of vertices per side
+	std::vector<GLfloat> sea_vertices;
+	std::vector<GLfloat> sea_normals;
+	std::vector<GLfloat> sea_uvs;
+	std::vector<GLuint> sea_indices;
+	GLuint seaVAO, seaVBO, seaEBO, seaNormalVBO, seaUVBO;
+
+	const float CLIFF_BASE_X = -1.25f;  // X position where cliff meets sea/plateau
+
+	struct Wave {
+		float amplitude;
+		float frequency;
+		float phase;
+		glm::vec2 direction;
+		float cliffInfluence;
+	};
+	std::vector<Wave> waves;
+
+
+	void initializeWaves() {
+		// Initialize multiple waves with different parameters
+		waves.resize(numWaves);
+		waves[0] = {
+			baseWaveHeight * 0.8f,
+			baseWaveFreq * 1.2f,
+			0.0f,
+			glm::normalize(glm::vec2(0.8f, 0.2f)),
+			1.0f
+		};
+
+		// Secondary waves parallel to cliff
+		waves[1] = {
+			baseWaveHeight * 0.6f,
+			baseWaveFreq * 1.5f,
+			0.5f,
+			glm::normalize(glm::vec2(0.2f, 1.0f)),
+			0.7f
+		};
+
+		// Shorter, choppier waves
+		waves[2] = {
+			baseWaveHeight * 0.4f,
+			baseWaveFreq * 2.0f,
+			1.0f,
+			glm::normalize(glm::vec2(-0.3f, 0.7f)),
+			0.5f
+		};
+
+		// Long rolling waves
+		waves[3] = {
+			baseWaveHeight * 0.7f,
+			baseWaveFreq * 0.8f,
+			1.5f,
+			glm::normalize(glm::vec2(0.5f, -0.5f)),
+			0.3f
+		};
+
+		// Additional converging waves
+		waves[4] = {
+			baseWaveHeight * 0.3f,
+			baseWaveFreq * 2.5f,
+			0.8f,
+			glm::normalize(glm::vec2(1.0f, 0.1f)),
+			0.9f
+		};
+
+		waves[5] = {
+			baseWaveHeight * 0.45f,
+			baseWaveFreq * 1.8f,
+			2.0f,
+			glm::normalize(glm::vec2(0.7f, -0.3f)),
+			0.6f
+		};
+
+		// Small ripple waves
+		waves[6] = {
+			baseWaveHeight * 0.2f,
+			baseWaveFreq * 3.0f,
+			0.3f,
+			glm::normalize(glm::vec2(-0.2f, 0.8f)),
+			0.4f
+		};
+
+		// Large slow wave
+		waves[7] = {
+			baseWaveHeight * 0.5f,
+			baseWaveFreq * 0.6f,
+			1.2f,
+			glm::normalize(glm::vec2(0.4f, 0.6f)),
+			0.8f
+		};
+	}
+
+	void generateSeaMesh() {
+		// Clear previous data
+		sea_vertices.clear();
+		sea_normals.clear();
+		sea_uvs.clear();
+		sea_indices.clear();
+
+		// Generate grid vertices
+		float gridSpacing = 2.0f / (GRID_SIZE - 1);
+		// Generate grid vertices with cliff convergence
+		for (int z = 0; z < GRID_SIZE; z++) {
+			for (int x = 0; x < GRID_SIZE; x++) {
+				// Calculate base position
+				float xProgress = x / float(GRID_SIZE - 1);
+				float zProgress = z / float(GRID_SIZE - 1);
+
+				// Apply non-linear transformation for cliff convergence
+				float xPos = -3.0f + xProgress * 2.0f;  // Start further out
+				float zPos = -1.0f + zProgress * 2.0f;
+
+				// Adjust vertex density near cliff
+				float cliffDistance = abs(xPos - CLIFF_BASE_X);
+				float compressionFactor = 1.0f - exp(-cliffDistance * 0.5f);
+				xPos = CLIFF_BASE_X + (xPos - CLIFF_BASE_X) * compressionFactor;
+
+				// Add vertex
+				sea_vertices.push_back(xPos);
+				sea_vertices.push_back(-0.15f);  // Initial y position
+				sea_vertices.push_back(zPos);
+
+				// Add normal (initially pointing up)
+				sea_normals.push_back(0.0f);
+				sea_normals.push_back(1.0f);
+				sea_normals.push_back(0.0f);
+
+				// Add UV coordinates with stretching compensation
+				sea_uvs.push_back(xProgress);
+				sea_uvs.push_back(zProgress);
+			}
+		}
+
+		// Generate indices for triangle strips
+		for (int z = 0; z < GRID_SIZE - 1; z++) {
+			for (int x = 0; x < GRID_SIZE - 1; x++) {
+				GLuint topLeft = z * GRID_SIZE + x;
+				GLuint topRight = topLeft + 1;
+				GLuint bottomLeft = (z + 1) * GRID_SIZE + x;
+				GLuint bottomRight = bottomLeft + 1;
+
+				// First triangle
+				sea_indices.push_back(topLeft);
+				sea_indices.push_back(bottomLeft);
+				sea_indices.push_back(topRight);
+
+				// Second triangle
+				sea_indices.push_back(topRight);
+				sea_indices.push_back(bottomLeft);
+				sea_indices.push_back(bottomRight);
+			}
+		}
+	}
+
+	void initializeSeaBuffers() {
+    // Generate and bind VAO
+    glGenVertexArrays(1, &seaVAO);
+    glBindVertexArray(seaVAO);
+
+    // Vertex buffer
+    glGenBuffers(1, &seaVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, seaVBO);
+    glBufferData(GL_ARRAY_BUFFER, sea_vertices.size() * sizeof(GLfloat), sea_vertices.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    // Normal buffer
+    glGenBuffers(1, &seaNormalVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, seaNormalVBO);
+    glBufferData(GL_ARRAY_BUFFER, sea_normals.size() * sizeof(GLfloat), sea_normals.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    // UV buffer
+    glGenBuffers(1, &seaUVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, seaUVBO);
+    glBufferData(GL_ARRAY_BUFFER, sea_uvs.size() * sizeof(GLfloat), sea_uvs.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+    // Index buffer
+    glGenBuffers(1, &seaEBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, seaEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sea_indices.size() * sizeof(GLuint), sea_indices.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(0);
+}
+
+	float calculateWaveHeight(float x, float z, float time) {
+		float height = 0.0f;
+
+		// Calculate distance from cliff base
+		float cliffDistance = abs(x - CLIFF_BASE_X);
+		float cliffInfluence = exp(-cliffDistance * 0.5f);
+
+		for (const Wave& wave : waves) {
+			// Calculate base wave
+			float dot = glm::dot(wave.direction, glm::vec2(x, z));
+			float waveHeight = wave.amplitude *
+				sin(dot * wave.frequency + time * wave.frequency + wave.phase);
+
+			// Apply cliff influence
+			float influencedHeight = waveHeight * (1.0f - (cliffInfluence * wave.cliffInfluence));
+
+			height += influencedHeight;
+		}
+
+		// Add additional height reduction near cliff
+		float cliffDamping = 1.0f - (cliffInfluence * 0.8f);
+		height *= cliffDamping;
+
+		return height;
+	}
+
+glm::vec3 calculateWaveNormal(float x, float z, float time) {
+    const float epsilon = 0.01f;
+
+    // Calculate heights at nearby points
+    float h = calculateWaveHeight(x, z, time);
+    float hx1 = calculateWaveHeight(x + epsilon, z, time);
+    float hz1 = calculateWaveHeight(x, z + epsilon, time);
+
+    // Calculate tangent vectors
+    glm::vec3 tangentX(epsilon, hx1 - h, 0.0f);
+    glm::vec3 tangentZ(0.0f, hz1 - h, epsilon);
+
+    // Calculate normal using cross product
+    glm::vec3 normal = glm::normalize(glm::cross(tangentZ, tangentX));
+    return normal;
+}
+
+	void updateSeaAnimation(float deltaTime) {
+		seaTime += deltaTime;
+
+		for (int i = 0; i < sea_vertices.size() / 3; i++) {
+			float x = sea_vertices[i * 3];
+			float z = sea_vertices[i * 3 + 2];
+
+			// Calculate wave height with cliff influence
+			float height = calculateWaveHeight(x, z, seaTime);
+
+			// Ensure smooth connection to cliff base
+			float cliffDistance = abs(x - CLIFF_BASE_X);
+			float cliffBlend = 1.0f - exp(-cliffDistance * 2.0f);
+			height *= cliffBlend;
+
+			// Update vertex position
+			sea_vertices[i * 3 + 1] = -0.15f + height;
+
+			// Calculate and update normal
+			glm::vec3 normal = calculateWaveNormal(x, z, seaTime);
+			sea_normals[i * 3] = normal.x;
+			sea_normals[i * 3 + 1] = normal.y;
+			sea_normals[i * 3 + 2] = normal.z;
+		}
+
+		// Update buffers
+		glBindBuffer(GL_ARRAY_BUFFER, seaVBO);
+		glBufferData(GL_ARRAY_BUFFER, sea_vertices.size() * sizeof(GLfloat), sea_vertices.data(), GL_DYNAMIC_DRAW);
+
+		glBindBuffer(GL_ARRAY_BUFFER, seaNormalVBO);
+		glBufferData(GL_ARRAY_BUFFER, sea_normals.size() * sizeof(GLfloat), sea_normals.data(), GL_DYNAMIC_DRAW);
+	}
+
+void renderSea(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix) {
+    glUseProgram(programID2);
+    glBindVertexArray(seaVAO);
+
+    glm::mat4 mvp = cameraMatrix * modelMatrix;
+    glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, &modelMatrix[0][0]);
+
+    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+    glUniformMatrix3fv(normalMatrixID, 1, GL_FALSE, &normalMatrix[0][0]);
+    glUniformMatrix4fv(LSM_ID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+    // Set light data
+    glUniform3fv(lightPositionID, 1, &lightPosition[0]);
+    glUniform3fv(lightIntensityID, 1, &lightIntensity[0]);
+    glUniform1i(shadowMapTextureID, 1);
+
+    // Set texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, TextureID3); // Ocean texture
+    glUniform1i(textureSamplerID, 0);
+
+    // Draw sea mesh
+    glDrawElements(GL_TRIANGLES, sea_indices.size(), GL_UNSIGNED_INT, 0);
+
+    glBindVertexArray(0);
+}
+
+
+	GLfloat vertex_buffer_data[60] = {
 		// Coords for cliff face
 		-1.25f, -0.15f, -1.0f,
 		-1.25f, -0.15f, 1.0f,
@@ -248,14 +1661,26 @@ struct world_setup {
 		-3.0f, -0.15f, 1.0f,
 
 		// Coords for seafront footpath
-		-0.9f, 0.152f, 1.0f,
-		-0.8f, 0.152f, 1.0f,
-		-0.8f, 0.152f, -1.0f,
-		-0.9f, 0.152f, -1.0f
+		-0.9f, 0.152f, 1.0f,//11
+		-0.8f, 0.152f, 1.0f,//12
+		-0.8f, 0.152f, -1.0f,//13
+		-0.9f, 0.152f, -1.0f, //14
+
+		// Coords for central plateau road
+		-0.7f, 0.152f, 0.0f,  //15
+		1.0f, 0.152f, 0.0f,  //16
+		1.0f, 0.152f, -0.3f, //17
+		-0.7f, 0.152f, -0.3f  //18
+	};
+
+	GLfloat original_sea_vertices[9] = {
+		-1.0f, -0.15f, -1.0f,
+		-3.0f, -0.15f, -1.0f,
+		-3.0f, -0.15f, 1.0f,
 	};
 
 	// TODO: set up vertex normals properly
-	GLfloat normal_buffer_data[48] {
+	GLfloat normal_buffer_data[60] {
 		-0.769,0.641,0,
 		-0.769,0.641,0,
 		-0.769,0.641,0,
@@ -274,9 +1699,16 @@ struct world_setup {
 		0.0,1.0,0.0,
 		0.0,1.0,0.0,
 		0.0,1.0,0.0,
+
+		//road texture normals
+		0.0,1.0,0.0,
+		0.0,1.0,0.0,
+		0.0,1.0,0.0,
+		0.0,1.0,0.0,
+
 	};
 
-	GLfloat uv_buffer_data[32] {
+	GLfloat uv_buffer_data[40] {
 		0.0f, 1.0f, // cliff face
 		1.0f, 1.0f,
 		1.0f, 0.0f,
@@ -295,11 +1727,16 @@ struct world_setup {
 		0.0f, 1.0f, // Seafront Footpath
 		1.0f, 1.0f,
 		1.0f, 0.0f,
+		0.0f, 0.0f,
+
+		0.0f, 1.0f, // Plateau road
+		1.0f, 1.0f,
+		1.0f, 0.0f,
 		0.0f, 0.0f
 	};
 
 
-	GLuint index_buffer_data[24] {
+	GLuint index_buffer_data[30] {
 		0,1,2, //Cliff face
 		2,3,0,
 
@@ -310,7 +1747,10 @@ struct world_setup {
 		0, 10, 1,
 
 		11,12,13, // Seafront Footpath
-		13, 14, 11
+		13, 14, 11,
+
+		15, 16, 17,
+		17, 18, 15
 	};
 
 	glm::mat4 modelMatrix;
@@ -320,7 +1760,7 @@ struct world_setup {
 	GLuint indexBufferID;
 	GLuint uvBufferID;
 	GLuint normalBufferID;
-	GLuint TextureID, TextureID2, TextureID3, TextureID4;
+	GLuint TextureID, TextureID2, TextureID3, TextureID4, TextureID5;
 
 
 	// Shader variable IDs
@@ -345,6 +1785,10 @@ struct world_setup {
 		// Define scale of the box geometry
 		this->position = position;
 		this->scale = scale;
+
+		initializeWaves();
+		generateSeaMesh();
+		initializeSeaBuffers();
 
 		modelMatrix = glm::mat4(1.0f);
 		// Translate the cliff to its position
@@ -427,6 +1871,7 @@ struct world_setup {
 		TextureID2 = LoadTextureTileBox("../Final_Project/Textures/grass_texture.jpg");
 		TextureID3 = LoadTextureTileBox("../Final_Project/Textures/Ocean_Texture.jpg");
 		TextureID4 = LoadTextureTileBox("../Final_Project/Textures/Footpath_Texture.jpg");
+		TextureID5 = LoadTextureTileBox("../Final_Project/Textures/Road_text.jpg");
 
 		//textureSamplerID = glGetUniformLocation(programID, "textureSampler");
 		textureSamplerID = glGetUniformLocation(programID2, "textureSampler");
@@ -437,6 +1882,13 @@ struct world_setup {
 	}
 
 	void renderWithLight(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix) {
+		static float lastTime = glfwGetTime();
+		float currentTime = glfwGetTime();
+		float deltaTime = currentTime - lastTime;
+		lastTime = currentTime;
+
+		updateSeaAnimation(deltaTime);
+
 		glUseProgram(programID2);
 
 		glBindVertexArray(vertexArrayID);
@@ -494,148 +1946,25 @@ struct world_setup {
 			GL_UNSIGNED_INT,
 			(void*)(6 * sizeof(GLuint)));
 
-		// set texture and draw sea with Texture3
-		glBindTexture(GL_TEXTURE_2D, TextureID3);
+		// set texture and draw road with Texture5
+		glBindTexture(GL_TEXTURE_2D, TextureID5);
 		glUniform1i(textureSamplerID, 0);
 		glDrawElements(
 			GL_TRIANGLES,
 			6,
 			GL_UNSIGNED_INT,
-			(void*)(12 * sizeof(GLuint)));
+			(void*)(24 * sizeof(GLuint)));
 
-		// set texture and draw sea with Texture3
-		glBindTexture(GL_TEXTURE_2D, TextureID4);
-		glUniform1i(textureSamplerID, 0);
-		glDrawElements(
-			GL_TRIANGLES,
-			6,
-			GL_UNSIGNED_INT,
-			(void*)(18 * sizeof(GLuint)));
+		// Render the new animated sea mesh
+		renderSea(cameraMatrix, lightSpaceMatrix);
 
 
 		glDisableVertexAttribArray(0);
 		glDisableVertexAttribArray(1);
 		glDisableVertexAttribArray(2);
-	}
-
-	void render(glm::mat4 cameraMatrix) {
-		// TODO change to a depth shader
-		glUseProgram(programID);
-
-		// TODO review to see if this line is necessary
-		glBindVertexArray(vertexArrayID);
-
-		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-		/*
-		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
-		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
-		*/
-
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
-
-		// TODO: Model transform
-		// ------------------------------------
-		glm::mat4 modelMatrix = glm::mat4(1.0f);
-		// Translate the cliff to its position
-		modelMatrix = glm::translate(modelMatrix, position);
-		// Scale the cliff along each axis
-		modelMatrix = glm::scale(modelMatrix, scale);
-		// Rotate the cliff face
-		modelMatrix = glm::rotate(modelMatrix,glm::radians(0.0f),glm::vec3(0.0f,1.0f,0.0f));
-
-		glm::mat4 mvp = cameraMatrix * modelMatrix;
-		glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
-
-		glEnableVertexAttribArray(2);
-		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
-		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-		//Set textureSampler to use texture unit 0
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, TextureID);
-		glUniform1i(textureSamplerID, 0);
-
-		// Draw the cliff face
-		glDrawElements(
-			GL_TRIANGLES,      // mode
-			6,    			   // number of indices
-			GL_UNSIGNED_INT,   // type
-			(void*)0           // element array buffer offset
-		);
-
-		// set texture and draw Plateau with Texture2
-		glBindTexture(GL_TEXTURE_2D, TextureID2);
-		glUniform1i(textureSamplerID, 0);
-		glDrawElements(
-			GL_TRIANGLES,
-			6,
-			GL_UNSIGNED_INT,
-			(void*)(6 * sizeof(GLuint)));
-
-		// set texture and draw sea with Texture3
-		glBindTexture(GL_TEXTURE_2D, TextureID3);
-		glUniform1i(textureSamplerID, 0);
-		glDrawElements(
-			GL_TRIANGLES,
-			6,
-			GL_UNSIGNED_INT,
-			(void*)(12 * sizeof(GLuint)));
-
-		// set texture and draw sea with Texture3
-		glBindTexture(GL_TEXTURE_2D, TextureID4);
-		glUniform1i(textureSamplerID, 0);
-		glDrawElements(
-			GL_TRIANGLES,
-			6,
-			GL_UNSIGNED_INT,
-			(void*)(18 * sizeof(GLuint)));
-
-
-		glDisableVertexAttribArray(0);
-		glDisableVertexAttribArray(1);
-		//glDisableVertexAttribArray(2);
 	}
 
 	void renderShadow(glm::mat4 lightSpaceMatrix) {
-		glUseProgram(depthShaderID);
-
-		glBindVertexArray(vertexArrayID);
-
-		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-		glEnableVertexAttribArray(2);
-		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
-		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
-
-		glUniformMatrix4fv(modelMatrixDepthID, 1, GL_FALSE, &modelMatrix[0][0]);
-		glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
-
-		// Draw the box
-		glDrawElements(
-			GL_TRIANGLES,      // mode
-			24,    			   // number of indices
-			GL_UNSIGNED_INT,   // type
-			(void*)0           // element array buffer offset
-		);
-
-		glDisableVertexAttribArray(0);
-		glDisableVertexAttribArray(1);
-		glDisableVertexAttribArray(2);
-	}
-
-	void orthographicRenderShadow(glm::mat4 lightSpaceMatrix) {
 		glUseProgram(depthShaderID);
 
 		glBindVertexArray(vertexArrayID);
@@ -844,7 +2173,7 @@ struct Building {
 	GLuint programID2;
 	GLuint depthShaderID;
 
-	void initialize(glm::vec3 position, glm::vec3 scale) {
+	void initialize(glm::vec3 position, glm::vec3 scale, std::string textureLocation) {
 		// Define scale of the building geometry
 		this->position = position;
 		this->scale = scale;
@@ -919,21 +2248,14 @@ struct Building {
 		lightSpaceMatrixID = glGetUniformLocation(depthShaderID, "lightSpaceMatrix");
 
 		static std::vector<std::string> textures = {
-			"../Final_Project/facade0.jpg",
-			"../Final_Project/facade1.jpg",
-			"../Final_Project/facade2.jpg",
-			"../Final_Project/facade3.jpg",
-			"../Final_Project/facade4.jpg",
-			"../Final_Project/facade5.jpg"
+			"../Final_Project/Textures/futuristic.jpg",
+			"../Final_Project/Textures/Apartment.jpg",
+			"../Final_Project/Textures/House.jpg",
+			"../Final_Project/Textures/Old_apartment.jpg"
+
 		};
 
-		// Static random number generator
-		static std::random_device rd;  // Obtain a random number from hardware once
-		static std::mt19937 gen(rd()); // Seed the generator once
-		std::uniform_int_distribution<> distr(0, 5); // Define the range
-
-		int random = distr(gen);  // Generate the random number
-		textureID = LoadTextureTileBox("../Final_Project/Textures/futuristic.jpg"); // Load the selected texture, assuming LoadTextureTileBox accepts std::string
+		textureID = LoadTextureTileBox(textureLocation.c_str()); // Load the selected texture, assuming LoadTextureTileBox accepts std::string
 
 		// Get a handle for our "textureSampler" uniform
 		//textureSamplerID = glGetUniformLocation(programID,"textureSampler");
@@ -1458,40 +2780,6 @@ struct HorizontalPlane {
 		glDisableVertexAttribArray(2);
 	}
 
-	void orthographicRenderShadow(glm::mat4 lightSpaceMatrix) {
-    	glUseProgram(depthShaderID);
-
-    	glBindVertexArray(vertexArrayID);
-
-    	glEnableVertexAttribArray(0);
-    	glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
-    	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-    	glEnableVertexAttribArray(1);
-    	glBindBuffer(GL_ARRAY_BUFFER, uvBufferID);
-    	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-    	glEnableVertexAttribArray(2);
-    	glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
-    	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-    	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
-
-    	glUniformMatrix4fv(modelMatrixDepthID, 1, GL_FALSE, &modelMatrix[0][0]);
-    	glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
-
-    	// Draw the box
-    	glDrawElements(
-			GL_TRIANGLES,      // mode
-			6,    			   // number of indices
-			GL_UNSIGNED_INT,   // type
-			(void*)0           // element array buffer offset
-		);
-
-    	glDisableVertexAttribArray(0);
-    	glDisableVertexAttribArray(1);
-    	glDisableVertexAttribArray(2);
-    }
 
 	void renderWithLight(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix, glm::vec3 lightIntensity, glm::vec3 lightPosition) {
 		glUseProgram(programID);
@@ -1563,6 +2851,8 @@ struct MyBot {
 	GLuint lightPositionID;
 	GLuint lightIntensityID;
 	GLuint programID;
+	glm::vec3 position;
+	glm::vec3 scale;
 
 	const int MAX_JOINTS = 128;  // Maximum number of joints supported
 
@@ -2054,7 +3344,9 @@ void update(float time) {
 		return res;
 	}
 
-	void initialize() {
+	void initialize(glm::vec3 position, glm::vec3 scale) {
+		this->position = position;
+		this->scale = scale;
 		// Modify your path if needed
 		if (!loadModel(model, "../Final_Project/model/bot/bot.gltf")) {
 			return;
@@ -2230,8 +3522,11 @@ void update(float time) {
 	void render(glm::mat4 cameraMatrix) {
 		glUseProgram(programID);
 
+		glm::mat4 modelMatrix = glm::mat4(1.0f);
+		modelMatrix = glm::translate(modelMatrix, position);
+		modelMatrix = glm::scale(modelMatrix, scale);
 		// Set camera
-		glm::mat4 mvp = cameraMatrix;
+		glm::mat4 mvp = cameraMatrix * modelMatrix;
 		glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
 		// -----------------------------------------------------------------
@@ -2317,20 +3612,40 @@ int main(void)
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 
-
 	// Our 3D character
-	MyBot bot;
-	bot.initialize();
+	MyBot bot, bot2;
+	bot.initialize(glm::vec3(200, 62.0f, 10), glm::vec3(0.25f));
+	bot2.initialize(glm::vec3(100, 62.0f, -200), glm::vec3(0.25f));
+
+	metro_stop myMetro;
+	myMetro.initialize(glm::vec3(50, 50.0f, 80), glm::vec3(20, 20, 20));
+
+	sports_center myCenter, myCenter2;
+	myCenter.initialize(glm::vec3(200, 50.0f, 10), glm::vec3(3*20, 20, 3*20));
+	myCenter2.initialize(glm::vec3(100, 50.0f, -230), glm::vec3(3*20, 20, 3*20));
 
 	// Initialize cliff wall
 	world_setup myWorld;
-	myWorld.intialize(glm::vec3(80, -10, -100), glm::vec3(200, 200, 200));
+	myWorld.intialize(glm::vec3(80, 0, -100), glm::vec3(200, 200, 200));
+
+	world_attributes myAttributes;
+	myAttributes.initialize(glm::vec3(80, 0, -100), glm::vec3(200, 200, 200));
 
 	HorizontalPlane myPlane;
 	myPlane.initialize(glm::vec3(80, -10, -100), glm::vec3(200, 200, 200));
 
-	Building myBuilding;
-	myBuilding.initialize(glm::vec3(0, 120, 0), glm::vec3(32, 3*32, 32));
+	Building myBuilding,myBuilding2, myBuilding3, myBuilding4;
+	myBuilding.initialize(glm::vec3(-80, 125, 60), glm::vec3(32, 3*32, 32), "../Final_Project/Textures/futuristic.jpg");
+
+	// New buildings along the cliff edge
+	// Shorter, wider building
+	myBuilding2.initialize(glm::vec3(-65, 95, -30), glm::vec3(45, 2*32, 35), "../Final_Project/Textures/House.jpg");
+
+	// Medium height, slim building
+	myBuilding3.initialize(glm::vec3(-80, 110, -200), glm::vec3(25, 2.5*32, 30), "../Final_Project/Textures/Apartment.jpg");
+
+	// Tall, narrow building
+	myBuilding4.initialize(glm::vec3(-80, 140, -260), glm::vec3(30, 3.5*32, 28), "../Final_Project/Textures/Apartment_texture.jpg");
 
 	Lighting_Shadows renderLight;
 	renderLight.initialize();
@@ -2365,6 +3680,35 @@ int main(void)
 	// Prepare a perspective camera
 	glm::mat4 projectionMatrix = glm::perspective(glm::radians(FoV), (float)windowWidth / windowHeight, zNear, zFar);
 
+	// In main() after setting up the camera
+	std::cout << "Camera settings:" << std::endl;
+	std::cout << "Position: " << eye_center.x << ", " << eye_center.y << ", " << eye_center.z << std::endl;
+	std::cout << "Look at: " << lookat.x << ", " << lookat.y << ", " << lookat.z << std::endl;
+	std::cout << "FOV: " << FoV << std::endl;
+	std::cout << "Near plane: " << zNear << std::endl;
+	std::cout << "Far plane: " << zFar << std::endl;
+
+	// Print the view frustum corners at the near plane
+	glm::mat4 viewMatrix = glm::lookAt(eye_center, lookat, up);
+	//glm::mat4 projectionMatrix = glm::perspective(glm::radians(FoV), (float)windowWidth / windowHeight, zNear, zFar);
+	glm::mat4 invVP = glm::inverse(projectionMatrix * viewMatrix);
+
+	glm::vec4 nearPlaneCorners[4] = {
+		invVP * glm::vec4(-1, -1, -1, 1),
+		invVP * glm::vec4(1, -1, -1, 1),
+		invVP * glm::vec4(-1, 1, -1, 1),
+		invVP * glm::vec4(1, 1, -1, 1)
+	};
+
+	std::cout << "Near plane corners in world space:" << std::endl;
+	for(int i = 0; i < 4; i++) {
+		nearPlaneCorners[i] /= nearPlaneCorners[i].w;
+		std::cout << "Corner " << i << ": "
+				  << nearPlaneCorners[i].x << ", "
+				  << nearPlaneCorners[i].y << ", "
+				  << nearPlaneCorners[i].z << std::endl;
+	}
+
 	// Time and frame rate tracking
 	static double lastTime = glfwGetTime();
 	float time = 0.0f;			// Animation time
@@ -2386,6 +3730,7 @@ int main(void)
 		if (playAnimation) {
 			time += deltaTime * playbackSpeed;
 			bot.update(time);
+			bot2.update(time);
 		}
 
 		// -------------------------------------------------------------------------------------
@@ -2393,6 +3738,7 @@ int main(void)
 		glm::mat4 viewMatrix = glm::lookAt(eye_center, lookat, up);
 		glm::mat4 vp = projectionMatrix * viewMatrix;
 		bot.render(vp);
+		bot2.render(vp);
 		// FPS tracking
 		// Count number of frames over a few seconds and take average
 		frames++;
@@ -2409,8 +3755,14 @@ int main(void)
 		//------------------------------------------------------------------------------
 		if (saveDepth) {
 			myBuilding.renderShadow(lightSpaceMatrix);
+			myBuilding2.renderShadow(lightSpaceMatrix);
+			myBuilding3.renderShadow(lightSpaceMatrix);
+			myBuilding4.renderShadow(lightSpaceMatrix);
 			myWorld.renderShadow(lightSpaceMatrix);
-			//myPlane.renderShadow(lightSpaceMatrix);
+			myAttributes.renderShadow(lightSpaceMatrix);
+			myCenter.renderShadow(lightSpaceMatrix);
+			myMetro.renderShadow(lightSpaceMatrix);
+			myCenter2.renderShadow(lightSpaceMatrix);
 			glBindFramebuffer(GL_FRAMEBUFFER, renderLight.depthTexture);
 			glViewport(0,0,windowWidth, windowHeight);
 			std::string filename = "../Final_Project/depth_camera.png";
@@ -2426,7 +3778,14 @@ int main(void)
 		glBindTexture(GL_TEXTURE_2D, renderLight.depthTexture);
 		mySkybox.render(viewMatrix,projectionMatrix);
 		myBuilding.renderWithLight(vp, lightSpaceMatrix);
+		myBuilding2.renderWithLight(vp, lightSpaceMatrix);
+		myBuilding3.renderWithLight(vp, lightSpaceMatrix);
+		myBuilding4.renderWithLight(vp, lightSpaceMatrix);
 		myWorld.renderWithLight(vp,lightSpaceMatrix);
+		myAttributes.renderWithLight(vp,lightSpaceMatrix,lightIntensity,lightPosition);
+		myCenter.renderWithLight(vp, lightSpaceMatrix);
+		myCenter2.renderWithLight(vp, lightSpaceMatrix);
+		myMetro.renderWithLight(vp,lightSpaceMatrix);
 		//myPlane.renderWithLight(vp,lightSpaceMatrix,lightIntensity, lightPosition);
 
 		/*
