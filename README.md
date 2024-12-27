@@ -8,3 +8,7 @@
 
   # Fourth Screen Shot: Skeletal Animation
   ![animation](https://github.com/user-attachments/assets/e863f000-23ba-450e-b1db-57dc60636ae1)
+
+  # Fifth Screen Shot: addition of more animated models, geometry, wave animation and more textures.
+  <img width="511" alt="More objects, wave animation, more skeletal animation" src="https://github.com/user-attachments/assets/422541e2-859f-402c-af3e-4844e221f4f1" />
+
